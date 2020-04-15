@@ -27,17 +27,55 @@ class ImportTransactionsService {
 
     await fs.promises.unlink(filePath);
 
+    const categoryTitles = this.obtainUniqueCategoriesFromParsedTransaction(
+      parsedTransactions,
+    );
+
+    const categoryIdsByTitle = await this.prepareCategoryIdsByTitle(
+      categoryTitles,
+    );
+
     const transactionsRepository = getCustomRepository(TransactionsRepository);
+    const transactions = parsedTransactions.map(parsedTransaction => {
+      return transactionsRepository.create({
+        title: parsedTransaction.title,
+        type: parsedTransaction.type,
+        value: parsedTransaction.value,
+        category_id: categoryIdsByTitle.get(parsedTransaction.category),
+      });
+    });
+    await transactionsRepository.save(transactions);
+    return transactions;
+  }
+
+  private obtainUniqueCategoriesFromParsedTransaction(
+    transactions: ParsedTransaction[],
+  ): string[] {
+    return Array.from(
+      new Set<string>(transactions.map(transaction => transaction.category)),
+    );
+  }
+
+  private async prepareCategoryIdsByTitle(
+    categoryTitles: string[],
+  ): Promise<Map<string, string>> {
+    const categoryEntities = await this.prepareCategoryEntities(categoryTitles);
+
+    const categoryIdsByTitle = categoryEntities.reduce((map, category) => {
+      map.set(category.title, category.id);
+      return map;
+    }, new Map<string, string>());
+
+    return categoryIdsByTitle;
+  }
+
+  private async prepareCategoryEntities(
+    categoryTitles: string[],
+  ): Promise<Category[]> {
     const categoriesRepository = getRepository(Category);
 
-    const categories = parsedTransactions
-      .reduce((uniqueCategories, transaction) => {
-        if (uniqueCategories.indexOf(transaction.category.toString()) < 0) {
-          uniqueCategories.push(transaction.category);
-        }
-        return uniqueCategories;
-      }, [] as string[])
-      .map(async category => {
+    const categoryEntities = await Promise.all(
+      categoryTitles.map(async category => {
         let categoryEntity = await categoriesRepository.findOne({
           where: { title: category },
         });
@@ -49,30 +87,9 @@ class ImportTransactionsService {
           await categoriesRepository.save(categoryEntity);
         }
         return categoryEntity;
-      });
-    const categoryIdByTitle = await (await Promise.all(categories)).reduce(
-      (map, category) => {
-        map.set(category.title, category.id);
-        return map;
-      },
-      new Map<string, string>(),
-    );
-    console.log(categories);
-
-    console.log(categoryIdByTitle);
-
-    const transactions = await Promise.all(
-      parsedTransactions.map(async parsedTransaction => {
-        return transactionsRepository.create({
-          title: parsedTransaction.title,
-          type: parsedTransaction.type,
-          value: parsedTransaction.value,
-          category_id: categoryIdByTitle.get(parsedTransaction.category),
-        });
       }),
-    ).then(values => transactionsRepository.save(values));
-
-    return transactions;
+    );
+    return categoryEntities;
   }
 }
 
