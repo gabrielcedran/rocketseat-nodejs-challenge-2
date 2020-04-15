@@ -12,21 +12,24 @@ interface Balance {
 class TransactionsRepository extends Repository<Transaction> {
   public async getBalance(): Promise<Balance> {
     const incomeAndOutcome = await this.createQueryBuilder()
-      .select("sum(case when(type = 'income') then value else 0 end)", 'income')
+      .select(
+        "coalesce(sum(case when(type = 'income') then value else 0 end), 0)",
+        'income',
+      )
       .addSelect(
-        "sum(case when(type = 'outcome') then value else 0 end)",
+        "coalesce(sum(case when(type = 'outcome') then value else 0 end), 0)",
         'outcome',
       )
       .addSelect(
-        "sum(case when(type = 'income') then value else value * -1 end)",
+        "coalesce(sum(case when(type = 'income') then value else value * -1 end), 0)",
         'total',
       )
       .getRawOne();
 
     return {
-      income: incomeAndOutcome.income,
-      outcome: incomeAndOutcome.outcome,
-      total: incomeAndOutcome.total,
+      income: Number(incomeAndOutcome.income),
+      outcome: Number(incomeAndOutcome.outcome),
+      total: Number(incomeAndOutcome.total),
     };
   }
 }
