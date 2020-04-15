@@ -54,7 +54,7 @@ class CreateTransactionService {
     }
 
     if (errors.length > 0) {
-      throw new AppError(errors.join('\n'), 409);
+      throw new AppError(errors.join('\n'), 400);
     }
 
     let categoryEntity = await categoriesRepository.findOne({
