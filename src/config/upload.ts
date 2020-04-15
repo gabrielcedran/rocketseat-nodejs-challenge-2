@@ -9,7 +9,7 @@ export default {
     filename(request, file, callback) {
       const hashPrefix = crypto.randomBytes(8).toString('HEX');
       const hashedFileName = `${hashPrefix}-${file.originalname}`;
-      console.log(hashedFileName);
+
       return callback(null, hashedFileName);
     },
   }),

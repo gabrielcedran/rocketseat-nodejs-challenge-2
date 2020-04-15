@@ -1,10 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import csvtojson from 'csvtojson';
+import { getCustomRepository, getRepository } from 'typeorm';
 import Transaction from '../models/Transaction';
 import uploadConfig from '../config/upload';
 import AppError from '../errors/AppError';
-import CreateTransactionService from './CreateTransactionService';
+import TransactionsRepository from '../repositories/TransactionsRepository';
+import Category from '../models/Category';
 
 interface ParsedTransaction {
   title: string;
@@ -25,13 +27,51 @@ class ImportTransactionsService {
 
     await fs.promises.unlink(filePath);
 
-    const createTransactionsService = new CreateTransactionService();
+    const transactionsRepository = getCustomRepository(TransactionsRepository);
+    const categoriesRepository = getRepository(Category);
 
-    const transactions = Promise.all(
-      parsedTransactions.map(async parsedTransaction =>
-        createTransactionsService.execute(parsedTransaction),
-      ),
+    const categories = parsedTransactions
+      .reduce((uniqueCategories, transaction) => {
+        if (uniqueCategories.indexOf(transaction.category.toString()) < 0) {
+          uniqueCategories.push(transaction.category);
+        }
+        return uniqueCategories;
+      }, [] as string[])
+      .map(async category => {
+        let categoryEntity = await categoriesRepository.findOne({
+          where: { title: category },
+        });
+
+        if (!categoryEntity) {
+          categoryEntity = categoriesRepository.create({
+            title: category,
+          });
+          await categoriesRepository.save(categoryEntity);
+        }
+        return categoryEntity;
+      });
+    const categoryIdByTitle = await (await Promise.all(categories)).reduce(
+      (map, category) => {
+        map.set(category.title, category.id);
+        return map;
+      },
+      new Map<string, string>(),
     );
+    console.log(categories);
+
+    console.log(categoryIdByTitle);
+
+    const transactions = await Promise.all(
+      parsedTransactions.map(async parsedTransaction => {
+        return transactionsRepository.create({
+          title: parsedTransaction.title,
+          type: parsedTransaction.type,
+          value: parsedTransaction.value,
+          category_id: categoryIdByTitle.get(parsedTransaction.category),
+        });
+      }),
+    ).then(values => transactionsRepository.save(values));
+
     return transactions;
   }
 }
